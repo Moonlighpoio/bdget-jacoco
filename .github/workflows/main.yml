@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
 
@@ -24,15 +25,30 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Check Snyk token
+        id: token
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          if [ -z "$SNYK_TOKEN" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::SNYK_TOKEN no configurado. Se omite el escaneo de Snyk."
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install Snyk
+        if: steps.token.outputs.present == 'true'
         run: npm install -g snyk
 
       - name: Authenticate Snyk
+        if: steps.token.outputs.present == 'true'
         run: snyk auth ${{ secrets.SNYK_TOKEN }}
 
       # Analiza las dependencias del proyecto. No rompe el pipeline si
       # encuentra vulnerabilidades; solo genera el reporte como evidencia.
       - name: Run Snyk
+        if: steps.token.outputs.present == 'true'
         continue-on-error: true
         run: snyk test --file=pom.xml --json-file-output=snyk-report.json
 
@@ -40,10 +56,11 @@ jobs:
         if: always()
         run: |
           if [ ! -f snyk-report.json ]; then
-            echo '{"status":"error","message":"Snyk no pudo generar el reporte"}' > snyk-report.json
+            echo '{"status":"skipped","message":"Token no configurado o Snyk no ejecutado"}' > snyk-report.json
           fi
 
       - name: Convert Snyk report to HTML
+        if: steps.token.outputs.present == 'true'
         continue-on-error: true
         run: npx --yes snyk-to-html -i snyk-report.json -o snyk-report.html
 
@@ -118,7 +135,20 @@ jobs:
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2-
 
+      - name: Check Sonar token
+        id: token
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::SONAR_TOKEN no configurado. Se omite el análisis de SonarCloud."
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run SonarCloud
+        if: steps.token.outputs.present == 'true'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
